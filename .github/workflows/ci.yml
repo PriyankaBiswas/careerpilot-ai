@@ -5,9 +5,27 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: careerpilot
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: careerpilot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careerpilot"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      # Throwaway CI database only; no real secrets are used in CI.
+      TEST_DATABASE_URL: postgresql://careerpilot:ci_only@localhost:5432/careerpilot_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q app
+      - run: pytest -q

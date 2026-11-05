@@ -1,9 +1,27 @@
+# Secrets and local configuration
 .env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# Python / tooling
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 .DS_Store
+
+# Private career data: resumes, exports and generated documents
 *.pdf
 *.docx
+*.doc
+*.rtf
+*.odt
 *.sqlite3
+*.db
+careerpilot-*.json
 private_data/
+resumes/
+exports/
