@@ -1,7 +1,16 @@
 .git
+.github
 .env
+.env.*
 .venv
 __pycache__
+.pytest_cache
+.streamlit/secrets.toml
+tests
 *.pdf
 *.docx
+*.doc
+careerpilot-*.json
 private_data
+resumes
+exports

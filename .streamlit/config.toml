@@ -1,0 +1,11 @@
+# Non-secret Streamlit settings (safe to commit). Secrets go in Streamlit Cloud "Secrets" or a local,
+# git-ignored .streamlit/secrets.toml.
+[server]
+maxUploadSize = 5
+
+[client]
+# Hide Python tracebacks in the browser so error details never echo career content.
+showErrorDetails = false
+
+[browser]
+gatherUsageStats = false
