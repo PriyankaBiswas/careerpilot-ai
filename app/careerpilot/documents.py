@@ -34,3 +34,26 @@ def docx_bytes(text):
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def resume_docx_bytes(text):
+    """ATS-friendly Word resume: first line as the name, ALL-CAPS lines as headings, '- ' lines as bullets."""
+    doc = Document()
+    lines = [line.rstrip() for line in text.splitlines()]
+    first = True
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if first:
+            doc.add_heading(stripped, level=0)
+            first = False
+        elif stripped.startswith("- "):
+            doc.add_paragraph(stripped[2:], style="List Bullet")
+        elif stripped.isupper() and len(stripped) < 40:
+            doc.add_heading(stripped.title(), level=1)
+        else:
+            doc.add_paragraph(stripped)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()

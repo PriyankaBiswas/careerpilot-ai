@@ -5,8 +5,12 @@ Values are never logged or displayed; diagnostics report only where a setting ca
 import os
 
 AI_PROVIDERS = ("manual", "openai")
-DEFAULT_AI_PROVIDER = "manual"
-DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_AI_PROVIDER = "openai"
+DEFAULT_OPENAI_MODEL = "gpt-6.1-terra"
+DEFAULT_OPENAI_FAST_MODEL = "gpt-6-luna"
+DEFAULT_MAX_OUTPUT_TOKENS = 16_000
+DEFAULT_MAX_COST_PER_OPERATION = 0.25
+REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 MIN_PASSWORD_LENGTH = 16
 
 
@@ -60,11 +64,41 @@ def setting_diagnostics(name, secrets_loader=_streamlit_secrets, environ=None):
 
 
 def ai_provider(**kwargs):
-    """Return 'manual' (default, no API key needed) or 'openai' (opt-in)."""
+    """Return 'openai' (default: in-app generation) or 'manual' (copy/paste fallback, no API key)."""
     value = get_setting("AI_PROVIDER", DEFAULT_AI_PROVIDER, **kwargs).lower()
     if value not in AI_PROVIDERS:
         raise ValueError(f"AI_PROVIDER must be one of {', '.join(AI_PROVIDERS)}.")
     return value
+
+
+def openai_settings(**kwargs):
+    """OpenAI options with safe defaults. Raises ValueError for invalid numbers or effort levels."""
+    def number(name, default, cast, low, high):
+        raw = get_setting(name, "", **kwargs)
+        try:
+            value = cast(raw) if raw else default
+        except ValueError:
+            raise ValueError(f"{name} must be a number.") from None
+        return min(max(value, low), high)
+
+    def effort(name, default):
+        value = get_setting(name, default, **kwargs).lower()
+        if value not in REASONING_EFFORTS:
+            raise ValueError(f"{name} must be one of {', '.join(REASONING_EFFORTS)}.")
+        return value
+
+    fast = get_setting("OPENAI_FAST_MODEL", DEFAULT_OPENAI_FAST_MODEL, **kwargs)
+    model = get_setting("OPENAI_MODEL", DEFAULT_OPENAI_MODEL, **kwargs)
+    return {
+        "model": model,
+        # Set OPENAI_FAST_MODEL = "none" to use the main model for matching and evidence checks.
+        "fast_model": model if fast.lower() == "none" else fast,
+        "max_output_tokens": number("OPENAI_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS, int, 1_000, 128_000),
+        "max_cost": number("OPENAI_MAX_COST_PER_OPERATION", DEFAULT_MAX_COST_PER_OPERATION, float, 0.0, 50.0),
+        "reasoning_effort": effort("OPENAI_REASONING_EFFORT", "medium"),
+        "fast_reasoning_effort": effort("OPENAI_FAST_REASONING_EFFORT", "low"),
+        "prices_json": get_setting("OPENAI_PRICES", "", **kwargs),
+    }
 
 
 def password_status(password):

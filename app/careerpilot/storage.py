@@ -13,7 +13,9 @@ import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "db", ""}
-EXPORT_KEYS = ("resume", "evidence", "interpretations", "last_job", "tracked_jobs")
+EXPORT_KEYS = ("resume", "evidence", "interpretations", "last_job", "tracked_jobs", "master_resumes",
+               "evidence_records", "resume_versions", "api_usage")
+JSON_KEYS = {"tracked_jobs", "master_resumes", "evidence_records", "resume_versions", "api_usage"}
 CONNECT_TIMEOUT_SECONDS = 10
 PLACEHOLDER_MARKERS = ("[YOUR-PASSWORD]", "YOUR-PASSWORD", "YOUR-PROJECT-REF", "YOUR-REGION", "<", ">")
 
@@ -223,13 +225,13 @@ class Storage:
         return jobs
 
     def export_all(self):
-        """Every saved record (resume, evidence, interpretations, last job, tracked jobs) as a dict."""
+        """Every saved record (resumes, evidence, interpretations, versions, jobs, usage) as a dict."""
         rows = self._run("SELECT key, content, updated_at FROM records WHERE key = ANY(%s) ORDER BY key",
                          (list(EXPORT_KEYS),), fetch=True, operation="export")
         records = {}
         for key, content, updated_at in rows:
             value = content
-            if key == "tracked_jobs":
+            if key in JSON_KEYS:
                 try:
                     value = json.loads(content or "[]")
                 except json.JSONDecodeError:
