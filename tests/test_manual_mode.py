@@ -1,13 +1,11 @@
-"""Manual-mode behaviour: no OpenAI key needed, config precedence, opt-in API path and the Streamlit app."""
+"""Manual-mode behaviour (no OpenAI key needed), configuration and the Streamlit app."""
 import os
 import sys
-import types
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from careerpilot import ai_client
-from careerpilot.config import ai_provider, get_setting, password_status, setting_diagnostics
+from careerpilot.config import ai_provider, get_setting, openai_settings, password_status, setting_diagnostics
 from careerpilot.documents import docx_bytes, extract
 from conftest import SAMPLE_EVIDENCE, SAMPLE_JD, SAMPLE_RESUME
 
@@ -15,9 +13,9 @@ APP = os.path.join(os.path.dirname(__file__), "..", "app", "main.py")
 no_secrets = lambda name: None  # noqa: E731
 
 
-def test_manual_is_default_provider():
-    assert ai_provider(secrets_lookup=no_secrets, environ={}) == "manual"
-    assert ai_provider(secrets_lookup=no_secrets, environ={"AI_PROVIDER": " OpenAI "}) == "openai"
+def test_openai_is_default_provider_and_manual_still_available():
+    assert ai_provider(secrets_lookup=no_secrets, environ={}) == "openai"
+    assert ai_provider(secrets_lookup=no_secrets, environ={"AI_PROVIDER": " Manual "}) == "manual"
     with pytest.raises(ValueError):
         ai_provider(secrets_lookup=no_secrets, environ={"AI_PROVIDER": "gemini"})
 
@@ -34,22 +32,20 @@ def test_password_is_optional_but_must_be_strong_when_set():
     assert password_status("x" * 16) == "enabled"
 
 
-def test_api_mode_requires_key_and_passes_prompt():
-    with pytest.raises(ai_client.AIConfigError):
-        ai_client.generate("prompt", "", "model")
-    calls = {}
-
-    class FakeClient:
-        def __init__(self, api_key, timeout):
-            calls["key"] = api_key
-            self.responses = types.SimpleNamespace(create=self.create)
-
-        def create(self, **kwargs):
-            calls.update(kwargs)
-            return types.SimpleNamespace(output_text="draft")
-
-    assert ai_client.generate("the prompt", "k", "m", client_factory=FakeClient) == "draft"
-    assert calls["input"] == "the prompt" and calls["model"] == "m" and calls["key"] == "k"
+def test_openai_settings_defaults_and_bounds():
+    settings = openai_settings(secrets_lookup=no_secrets, environ={})
+    assert settings["model"] == "gpt-6.1-terra" and settings["fast_model"] == "gpt-6-luna"
+    assert settings["max_output_tokens"] == 16_000 and settings["max_cost"] == 0.25
+    assert settings["reasoning_effort"] == "medium" and settings["fast_reasoning_effort"] == "low"
+    env = {"OPENAI_MODEL": "gpt-x", "OPENAI_FAST_MODEL": "none", "OPENAI_MAX_OUTPUT_TOKENS": "999999",
+           "OPENAI_MAX_COST_PER_OPERATION": "-1"}
+    settings = openai_settings(secrets_lookup=no_secrets, environ=env)
+    assert settings["fast_model"] == "gpt-x"  # "none" falls back to the main model
+    assert settings["max_output_tokens"] == 128_000 and settings["max_cost"] == 0.0
+    with pytest.raises(ValueError):
+        openai_settings(secrets_lookup=no_secrets, environ={"OPENAI_MAX_OUTPUT_TOKENS": "lots"})
+    with pytest.raises(ValueError):
+        openai_settings(secrets_lookup=no_secrets, environ={"OPENAI_REASONING_EFFORT": "extreme"})
 
 
 def test_manual_mode_does_not_import_openai():
@@ -92,6 +88,7 @@ def test_app_rejects_weak_password(app_env):
 
 def test_app_manual_flow_without_openai_key(app_env, pg_url):
     app_env.setenv("DATABASE_URL", pg_url)
+    app_env.setenv("AI_PROVIDER", "manual")
     from careerpilot.storage import Storage
     store = Storage(pg_url)
     store.init_schema()
@@ -131,6 +128,7 @@ def test_app_manual_flow_without_openai_key(app_env, pg_url):
 
 def test_app_interview_prompt_uses_last_job(app_env, pg_url):
     app_env.setenv("DATABASE_URL", pg_url)
+    app_env.setenv("AI_PROVIDER", "manual")
     from careerpilot.storage import Storage
     store = Storage(pg_url)
     store.init_schema()
@@ -143,19 +141,18 @@ def test_app_interview_prompt_uses_last_job(app_env, pg_url):
     assert SAMPLE_JD in at.session_state["interview_prompt"]
 
 
-def test_openai_mode_without_key_reports_error_but_keeps_prompt(app_env, pg_url):
+def test_openai_mode_without_key_disables_generation(app_env, pg_url):
     app_env.setenv("DATABASE_URL", pg_url)
-    app_env.setenv("AI_PROVIDER", "openai")
     from careerpilot.storage import Storage
     store = Storage(pg_url)
     store.init_schema()
     store.save("resume", SAMPLE_RESUME)
     at = AppTest.from_file(APP, default_timeout=30).run()
+    assert not at.exception
+    assert any("OPENAI_API_KEY is not configured" in e.value for e in at.sidebar.error)
     next(t for t in at.text_area if t.label == "Paste the job description").input(SAMPLE_JD)
-    next(b for b in at.button if b.label == "Generate evidence-grounded resume").click()
     at.run()
-    assert any("OPENAI_API_KEY is not configured" in e.value for e in at.error)
-    assert SAMPLE_JD in at.session_state["resume_prompt"]
+    assert next(b for b in at.button if b.label == "Generate tailored resume").proto.disabled
 
 
 def test_setting_diagnostics_reports_source_without_value():
